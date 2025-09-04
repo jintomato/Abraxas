@@ -224,8 +224,12 @@
     let start = performance.now();
     requestAnimationFrame(tick);
     function tick(now){
-      const t = (now - start) / 1000;
-      ctx.clearRect(0, 0, W, H);
+        const t = (now - start) / 1000;
+        ctx.clearRect(0, 0, W, H);
+        // 개별 렌더링 함수에서 globalAlpha를 변경하기 때문에
+        // 프레임 시작 시 항상 기본값으로 초기화하여 누적 투명도로
+        // 인해 점이 보이지 않는 문제를 방지한다.
+        ctx.globalAlpha = 1;
 
       drawStars(t);
       drawVignette();
