@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>N1 — 점 (3가지 표현, 고대비/수정)</title>
+  <style>
+    :root{
+      --bg-1:#e2e7ff; /* 배경을 약간 더 어둡게 */
+      --bg-2:#bcc7ff;
+      --ink:#101834;
+      --glass:rgba(255,255,255,0.68);
+      --border:rgba(16,24,52,0.16);
+      --accent:#5660ff;
+    }
+    *{box-sizing:border-box}
+    html,body{
+      height:100%;margin:0;overflow:hidden;
+      background: radial-gradient(120vmax 90vmax at 50% 30%, var(--bg-1), var(--bg-2));
+      color:var(--ink);
+      font-family: ui-sans-serif, system-ui, -apple-system,"Segoe UI",Roboto,"Noto Sans KR",Helvetica,Arial;
+    }
+    canvas{position:fixed; inset:0; width:100%; height:100%; display:block}
+    .hud{
+      position:fixed; left:16px; top:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+      padding:12px; border-radius:14px; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+      background:var(--glass); border:1px solid var(--border); user-select:none; z-index:2;
+    }
+    .title{font-weight:700; font-size:14px; margin-right:6px}
+    .tabs{display:flex; gap:6px}
+    .tab{
+      font-size:12.5px; padding:8px 10px; border-radius:10px; cursor:pointer; border:1px solid var(--border);
+      background:rgba(255,255,255,0.9);
+    }
+    .tab[aria-selected="true"]{ outline:2px solid var(--accent); background:#fff}
+    .hint{font-size:12px; opacity:.7}
+    .legend{
+      position:fixed; right:16px; bottom:16px; font-size:12px; opacity:.8;
+      padding:8px 10px; border-radius:10px; background:rgba(255,255,255,0.6);
+      border:1px solid var(--border); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+      display:flex; gap:10px; align-items:center; z-index:2;
+    }
+    .switch{ display:inline-flex; align-items:center; gap:6px; }
+    .switch input{ accent-color: var(--accent); }
+    @media (max-width:520px){
+      .hud{left:12px; top:12px; padding:10px}
+      .tab{padding:7px 8px; font-size:12px}
+      .legend{right:12px; bottom:12px; font-size:11px}
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <div class="hud" role="tablist" aria-label="N1 표현 선택">
+    <span class="title">N1 — 점</span>
+    <div class="tabs">
+      <button class="tab" role="tab" aria-selected="true" data-mode="small">① 작은 점</button>
+      <button class="tab" role="tab" aria-selected="false" data-mode="blink">② 빛의 점멸</button>
+      <button class="tab" role="tab" aria-selected="false" data-mode="tremble">③ 흔들리는 점</button>
+    </div>
+    <span class="hint">키보드 1·2·3 또는 클릭</span>
+  </div>
+
+  <div class="legend">
+    <span>클릭/마우스 이동: 순간 깜빡임</span>
+    <label class="switch"><input type="checkbox" id="contrast" checked> Contrast+</label>
+  </div>
+
+  <script>
+  (() => {
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d', { alpha: true });
+    const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
+    const PREF_REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const contrastToggle = document.getElementById('contrast');
+
+    let W=0, H=0, MIN=0;
+    function resize(){
+      W = Math.floor(innerWidth);
+      H = Math.floor(innerHeight);
+      MIN = Math.min(W, H);
+      canvas.width = Math.floor(W * dpr);
+      canvas.height = Math.floor(H * dpr);
+      canvas.style.width = W + 'px';
+      canvas.style.height = H + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      initStars();
+    }
+    addEventListener('resize', resize, { passive: true });
+    resize();
+
+    // ---------- utils ----------
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const lerp  = (a, b, t) => a + (b - a) * t;
+    const rand  = (a=0, b=1) => a + Math.random() * (b - a);
+    function snoise(t, spd=1, seed=0){
+      const x = t * spd + seed * 7.13;
+      return Math.sin(x*1.0)*0.5 + Math.sin(x*1.7)*0.3 + Math.sin(x*2.4)*0.2; // [-1,1] 근사
+    }
+
+    // ---------- stars ----------
+    const STARS = [];
+    function initStars(){
+      STARS.length = 0;
+      const n = clamp(Math.floor((W * H) / 18000), 80, 220); // 별 밀도
+      for(let i=0;i<n;i++){
+        STARS.push({
+          x: Math.random()*W,
+          y: Math.random()*H,
+          r: rand(0.35, 1.6) * (MIN/760),
+          a: rand(0.07, 0.18),
+          tw: rand(0.2, 0.6),
+          ph: rand(0, Math.PI*2)
+        });
+      }
+    }
+    function drawStars(t){
+      for(const s of STARS){
+        const a = s.a + Math.sin(t * s.tw + s.ph) * 0.04;
+        if(a <= 0.001) continue;
+        ctx.globalAlpha = a;
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // ---------- vignette & underlay ----------
+    function drawVignette(){
+      const g = ctx.createRadialGradient(W*0.5, H*0.42, MIN*0.1, W*0.5, H*0.5, Math.max(W,H)*0.78);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(0.55, 'rgba(0,0,0,0.12)');
+      g.addColorStop(1, 'rgba(0,0,0,0.28)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0,0,W,H);
+    }
+    function drawUnderlay(x, y, rad){
+      const g = ctx.createRadialGradient(x, y, rad*0.2, x, y, rad*3.4);
+      g.addColorStop(0, 'rgba(0,0,0,0.28)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, rad*3.4, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // ---------- base params ----------
+    const base = {
+      x: () => W * 0.5,
+      y: () => H * 0.42,
+      r: () => clamp(MIN * 0.014, 8, 20),        // 코어
+      halo: () => clamp(MIN * 0.22, 110, 260)    // 헤일로
+    };
+
+    // ---------- interaction ----------
+    const inter = { boost: 0, decay: 0.985 };
+    addEventListener('mousemove', () => { inter.boost = Math.min(1, inter.boost + 0.18); }, { passive: true });
+    addEventListener('click', () => { inter.boost = 1; });
+
+    // ---------- mode ----------
+    let mode = 'small';
+    const tabs = [...document.querySelectorAll('.tab')];
+    function setMode(m){
+      mode = m;
+      tabs.forEach(b => b.setAttribute('aria-selected', String(b.dataset.mode === m)));
+      trembleTrail.length = 0;
+    }
+    tabs.forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
+    addEventListener('keydown', (e) => {
+      if(e.key === '1') setMode('small');
+      if(e.key === '2') setMode('blink');
+      if(e.key === '3') setMode('tremble');
+    });
+
+    // ---------- dot renderer ----------
+    function drawDot(x, y, r, halo, intensity, { ring = false } = {}){
+      const k = clamp(intensity, 0, 1);
+      const brightBoost = contrastToggle.checked ? 0.14 : 0.0; // 더 밝게
+      const coreA = clamp(0.80 * k + 0.28 + brightBoost, 0, 1);
+
+      // 코어
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${coreA})`;
+      ctx.fill();
+
+      // 헤일로
+      const gain = contrastToggle.checked ? 1.15 : 0.9;
+      const g = ctx.createRadialGradient(x, y, r * 0.5, x, y, halo);
+      const lilac = `rgba(210,205,255,${(0.40 * k) * gain})`;
+      const white = `rgba(255,255,255,${(0.50 * k) * gain})`;
+      g.addColorStop(0, white);
+      g.addColorStop(0.10, lilac);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, halo, 0, Math.PI * 2);
+      ctx.fill();
+
+      if(ring){
+        const a = (contrastToggle.checked ? 0.14 : 0.10) * k;
+        if(a > 0.01){
+          ctx.globalAlpha = a;
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = '#fff';
+          ctx.beginPath();
+          ctx.arc(x, y, r * 2.2, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+        }
+      }
+    }
+
+    // ---------- variants ----------
+    const smallState   = { twSpd: 1.6, flickerAmp: PREF_REDUCED ? 0.08 : 0.14 };
+    const blinkState   = { flickerAmp: PREF_REDUCED ? 0.16 : 0.36, nextBlinkAt: performance.now() + rand(1400, 3200), blinking: false, blinkEnd: 0 };
+    const trembleState = { jitterAmp: PREF_REDUCED ? MIN * 0.003 : MIN * 0.012, flickerAmp: PREF_REDUCED ? 0.12 : 0.24 };
+    const trembleTrail = []; const maxTrail = 12;
+
+    // ---------- loop ----------
+    let start = performance.now();
+    requestAnimationFrame(tick);
+    function tick(now){
+      const t = (now - start) / 1000;
+      ctx.clearRect(0, 0, W, H);
+
+      drawStars(t);
+      drawVignette();
+
+      let boost = inter.boost;
+      if(boost > 0){
+        inter.boost *= inter.decay;
+        if(inter.boost < 0.01) inter.boost = 0;
+      }
+
+      const cx = base.x(), cy = base.y();
+      const r  = base.r(), halo = base.halo();
+
+      // 중앙 underlay로 배경 대비 극대화
+      drawUnderlay(cx, cy, halo * 0.55);
+
+      if(mode === 'small'){
+        let k = 0.82 + smallState.flickerAmp * (snoise(t, smallState.twSpd, 0.2)) * 0.5;
+        if(boost > 0) k = lerp(k, 0.99, 0.45 * boost);
+        k = clamp(k, 0.50, 1); // 최소 밝기↑
+        drawDot(cx, cy, r * 0.95, halo * 0.9, k, { ring: false });
+
+      }else if(mode === 'blink'){
+        if(!blinkState.blinking && now >= blinkState.nextBlinkAt && !PREF_REDUCED){
+          blinkState.blinking = true;
+          blinkState.blinkEnd = now + rand(80, 140);
+        }
+        if(blinkState.blinking && now >= blinkState.blinkEnd){
+          blinkState.blinking = false;
+          blinkState.nextBlinkAt = now + rand(1600, 3800);
+        }
+        let k = 0.76 + blinkState.flickerAmp * ((snoise(t, 2.1, 0.1) * 0.6 + snoise(t, 5.1, 3.3) * 0.4) * 0.5);
+        if(boost > 0) k = lerp(k, 1.0, 0.55 * boost);
+        if(blinkState.blinking) k = Math.min(k, 0.28); // 너무 꺼지지 않게
+        k = clamp(k, 0.34, 1);
+        drawDot(cx, cy, r, halo, k, { ring: true });
+
+      }else if(mode === 'tremble'){
+        const jx = snoise(t, 1.0, 1.7) * trembleState.jitterAmp;
+        const jy = snoise(t, 1.25, 7.31) * trembleState.jitterAmp;
+        const x = cx + jx, y = cy + jy;
+
+        trembleTrail.push({ x, y, t });
+        while(trembleTrail.length > maxTrail) trembleTrail.shift();
+
+        for(let i=0;i<trembleTrail.length;i++){
+          const p = trembleTrail[i];
+          const age = (i+1) / trembleTrail.length;
+          const fade = age * 0.55; // 잔상 더 또렷
+          const rr = r * lerp(0.88, 1.0, age);
+          const hh = halo * lerp(0.72, 1.0, age);
+          drawDot(p.x, p.y, rr, hh, 0.68 * fade, { ring: false });
+        }
+
+        let k = 0.78 + trembleState.flickerAmp * (snoise(t, 2.0, 0.23) * 0.55 + snoise(t, 5.3, 3.3) * 0.45) * 0.5;
+        if(boost > 0) k = lerp(k, 0.99, 0.5 * boost);
+        k = clamp(k, 0.42, 1);
+        drawDot(x, y, r, halo, k, { ring: false });
+      }
+
+      requestAnimationFrame(tick);
+    }
+  })();
+  </script>
+</body>
+</html>
